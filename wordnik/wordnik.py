@@ -5,26 +5,25 @@ This API implements all the methods described at http://developer.wordnik.com/do
 maintainer: Robin Walsh (robin@wordnik.com)
 """
 
-import helpers
-import httplib
+import helpers      ## helper functions for this module
+import httplib, os
+
+from optparse import OptionParser
+from xml.etree import ElementTree
+from sys import stdout, stderr
+
 try:
     import simplejson as json
 except ImportError:
     import json
-import os
-import urllib
-import urllib2
-from optparse import OptionParser
-from xml.etree import ElementTree
-from pprint import pprint
-from sys import stdout, stderr
 
-DEFAULT_HOST   = "api.wordnik.com"
-DEFAULT_URI    = "/v4"
-DEFAULT_URL    = "http://" + DEFAULT_HOST + DEFAULT_URI
-FORMAT_JSON = "json"
-FORMAT_XML = "xml" 
-DEFAULT_FORMAT = FORMAT_JSON
+DEFAULT_HOST    = "api.wordnik.com"
+DEFAULT_URI     = "/v4"
+DEFAULT_URL     = "http://" + DEFAULT_HOST + DEFAULT_URI
+
+FORMAT_JSON     = "json"
+FORMAT_XML      = "xml" 
+DEFAULT_FORMAT  = FORMAT_JSON
 
 class RestfulError(Exception):
     """Raised when response from REST API indicates an error has occurred."""
@@ -86,10 +85,12 @@ class Wordnik(object):
         self.password = password
         self.token    = None
         self.beta     = beta
+
+        self._http_code = None
         
         if username and password:
             try:
-                j = json.loads(self.account_get_authenticate(username, password=password))
+                j = self.account_get_authenticate(username, password=password)
                 self.token = j['token']
             except:
                 raise RestfulError("Could not authenticate with the given username and password")
@@ -101,9 +102,13 @@ class Wordnik(object):
         the Wordnik API"""
         
         ## there is a directory called "endpoints"
-        basedir = os.path.dirname(__file__)
-        for filename in os.listdir('{0}/endpoints'.format(basedir)):
-            j = json.load(open('{0}/endpoints/{1}'.format(basedir, filename)))
+        #basedir = os.path.dirname(__file__)
+        
+         ## there is a directory called "endpoints"
+        basedir = "wordnik/endpoints/"
+        filenames = ['account.json','word.json','wordList.json','wordLists.json','words.json']
+        for filename in filenames:
+            j = json.load(open(basedir+filename))
             Wordnik._create_methods(j)
             
     @classmethod
@@ -179,25 +184,6 @@ class Wordnik(object):
         
         return self._do_http(path, headers, beta=self.beta)
     
-    ## Some convenience methods to help with api keys and tokens
-    def get_key(self):
-        """Returns the API key we're currently using"""
-        return self._api_key
-
-    def set_key(self, api_key):
-        """Set the API key we use to make calls to the API"""
-        self._api_key = api_key
-
-    def get_auth_token(self):
-        """Returns the auth token we've recieved from the API (or None)"""
-        return self.token
-
-    def set_auth_token(self, token):
-        """Sets the auth token we use to make authenticated calls"""
-        self.token = token
-
-    ## A convenience method to wrap the retrieval and storage of an auth
-    ## token in case we don't initialize with a username and password.
     def authenticate(self, username, password):
         """A convenience method to get an auth token in case the object was 
         not instantiated with a username and a password.
@@ -212,17 +198,25 @@ class Wordnik(object):
             self.token = resp['token']
             return True
     
-    @staticmethod
-    def _do_http(uri, headers, body=None, method="GET", beta=False):
+    def _do_http(self, uri, headers, body=None, method="GET", beta=False):
         """This wraps the HTTP call. This may get factored out in the future."""
+        ## If there's a body, it will be JSON.
         if body:
             headers.update( {"Content-Type": "application/json"})
+
+        ## make the HTTP connection (to the right host)
         full_uri = DEFAULT_URI + uri
         conn = httplib.HTTPConnection(DEFAULT_HOST)
         if beta:
             conn = httplib.HTTPConnection("beta.wordnik.com")
+
+        ## Make the request, get the response
         conn.request(method, full_uri, body, headers)
         response = conn.getresponse()
+        ## Save the response code for later (in case we need it)
+        self._http_code = response.status
+
+        ## Return meaningful structured data if the call was OK
         if response.status == httplib.OK:
             text = response.read()
             format_ = headers.get('format', DEFAULT_FORMAT)
@@ -230,6 +224,8 @@ class Wordnik(object):
                 return json.loads(text)
             elif format_ == FORMAT_XML:
                 return ElementTree.XML(text)
+        
+        ## Otherwise just return what we got
         else:
-            print >> stderr, "{0}: {1}".format(response.status, response.reason)
-            return None
+            return response.read()
+            #print >> stderr, "{0}: {1}".format(response.status, response.reason)

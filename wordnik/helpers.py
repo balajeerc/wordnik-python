@@ -1,11 +1,12 @@
-import json, re, urllib, urllib2, wordnik
+import simplejson as json
+import re, urllib, urllib2, wordnik
 import wordnik
 
 def generate_docs(params, response, summary, path):
     """This will generate the documentation for a function given some information
     about the params, the response (not currently used), the summary, and the path."""
-    docstring   = "{0}\n".format(summary)
-    docstring  += "{0}\n".format(path)
+    docstring   = "%s\n" % summary
+    docstring  += "%s\n" % path
     
     path_params  = get_path_params(params)
     other_params = get_other_params(params)
@@ -13,13 +14,13 @@ def generate_docs(params, response, summary, path):
     if path_params:
         docstring += "\nPath Parameters:\n"
         for param in path_params:
-            param_doc  = "  {0}\n".format(param.get('name'))
+            param_doc  = "  %s\n" % param.get('name')
             docstring += param_doc
  
     if other_params:
         docstring += "\nOther Parameters:\n"
         for param in other_params:
-            param_doc  = "  {0}\n".format(param.get('name'))
+            param_doc  = "  %s\n" % param.get('name')
             docstring += param_doc
 
     return docstring
@@ -91,11 +92,11 @@ def process_args(path, params, args, kwargs):
     
     if not set(given_params).issuperset(set(required_params)):
         notsupplied = set(given_params).symmetric_difference(set(required_params)).intersection(set(required_params))
-        raise wordnik.MissingParameters("Some required parameters are missing: {0}".format(notsupplied))
+        raise wordnik.MissingParameters("Some required parameters are missing: %s" % notsupplied)
     
     ## get "{format} of of the way first"
     format = kwargs.get('format') or wordnik.DEFAULT_FORMAT
-    path   = path.replace('{format}', format) + "?"    
+    path   = path.replace('{format}', format)
     
     positional_args_re  = re.compile('{([\w]+)}')
     headers             = {}
@@ -119,11 +120,17 @@ def process_args(path, params, args, kwargs):
     if 'body' in kwargs:
         body = json.dumps(kwargs.pop('body'))
     
+    ## before we append anything to the path, make sure it doesn't end in
+    ## "/" and append a "?"
+    if path.endswith("/"):
+        path = path[:-1]
+    path += "?"
+
     ## handle additional query args
     for param in query_params:
         name = param.get('name')
         if name in kwargs:
-            path += "{0}={1}&".format(name, urllib.quote(kwargs.pop(name).__str__()))
+            path += "%s=%s&" % (name, urllib.quote(kwargs.pop(name).__str__()))
 
     
     ## put all remaining kwargs in the headers
@@ -134,12 +141,12 @@ def process_args(path, params, args, kwargs):
     ## raise an exception.
     
     if positional_args_re.search(path):
-        raise wordnik.MissingParameters("Some required parameters are missing: {0}".format(path))
+        raise wordnik.MissingParameters("Some required parameters are missing: %s" % path)
     
     ## similarly, raise and exception if we're missing a keyword arg.
     for param in params:
         if param['paramType'] == 'body' and body == None:
-            raise wordnik.MissingParameters("Some required parameters are missing: {0}".format(param))
+            raise wordnik.MissingParameters("Some required parameters are missing: %s" % param)
     
     ## return a 3-tuple of (<URI path>, <headers>, <body>)
     return (path, headers, body)
